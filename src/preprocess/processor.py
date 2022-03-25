@@ -6,6 +6,10 @@ from transformers import BertTokenizer
 from collections import defaultdict
 import random
 
+"""
+转换数据为BERT模型的输入
+"""
+
 logger = logging.getLogger(__name__)
 
 ENTITY_TYPES = ['DRUG', 'DRUG_INGREDIENT', 'DISEASE', 'SYMPTOM', 'SYNDROME', 'DISEASE_GROUP',
@@ -15,7 +19,7 @@ ENTITY_TYPES = ['DRUG', 'DRUG_INGREDIENT', 'DISEASE', 'SYMPTOM', 'SYNDROME', 'DI
 
 class InputExample:
     def __init__(self,
-                 set_type,
+                 set_type, ##'train'（单模型) or 'test' or 'stack'(交叉验证)
                  text,
                  labels=None,
                  pseudo=None,
@@ -124,12 +128,12 @@ class NERProcessor:
 
                 assert sent[new_offset: new_offset + len(_label[-1])] == _label[-1]
 
-                new_labels.append((_label[1], _label[-1], new_offset))
+                new_labels.append((_label[1], _label[-1], new_offset)) ##分别为实体类型, 文本内容，重构后的offset
             # label 被截断的情况
             elif _label[2] < end_index < _label[3]:
                 raise RuntimeError(f'{sent}, {_label}')
 
-        for _label in distant_labels:
+        for _label in distant_labels: ##distant_labels是candidate_entities
             if _label in sent:
                 new_distant_labels.append(_label)
 
@@ -153,7 +157,7 @@ class NERProcessor:
 
                 examples.append(InputExample(set_type=set_type,
                                              text=sent,
-                                             labels=labels,
+                                             labels=labels, #实体类型, 文本内容，重构后的offset
                                              pseudo=pseudo,
                                              distant_labels=tmp_distant_labels))
 
@@ -164,6 +168,7 @@ def fine_grade_tokenize(raw_text, tokenizer):
     """
     序列标注任务 BERT 分词器可能会导致标注偏移，
     用 char-level 来 tokenize
+    将输入文本分割成一个个token，和词典配合以让机器认识文本
     """
     tokens = []
 
@@ -171,7 +176,7 @@ def fine_grade_tokenize(raw_text, tokenizer):
         if _ch in [' ', '\t', '\n']:
             tokens.append('[BLANK]')
         else:
-            if not len(tokenizer.tokenize(_ch)):
+            if not len(tokenizer.tokenize(_ch)): ##使用分词器分词
                 tokens.append('[INV]')
             else:
                 tokens.append(_ch)
@@ -183,12 +188,14 @@ def cut_sentences_v1(sent):
     """
     the first rank of sentence cut
     """
+    ##re.sub用于替换第一个参数成第二个参数
+    ##pattern里面，第一个括号里的为第一组，第二个括号里的为第二组。repl里\1引用第一组，\2引用第二组，相当于在每个终句符号后加个空格
     sent = re.sub('([。！？\?])([^”’])', r"\1\n\2", sent)  # 单字符断句符
     sent = re.sub('(\.{6})([^”’])', r"\1\n\2", sent)  # 英文省略号
     sent = re.sub('(\…{2})([^”’])', r"\1\n\2", sent)  # 中文省略号
     sent = re.sub('([。！？\?][”’])([^，。！？\?])', r"\1\n\2", sent)
     # 如果双引号前有终止符，那么双引号才是句子的终点，把分句符\n放到双引号后
-    return sent.split("\n")
+    return sent.split("\n") ##根据空格分句
 
 
 def cut_sentences_v2(sent):
@@ -206,15 +213,15 @@ def cut_sent(text, max_seq_len):
     # 细粒度划分
     sentences_v1 = cut_sentences_v1(text)
     for sent_v1 in sentences_v1:
-        if len(sent_v1) > max_seq_len - 2:
+        if len(sent_v1) > max_seq_len - 2: ##句子太长才用第二级分句
             sentences_v2 = cut_sentences_v2(sent_v1)
-            sentences.extend(sentences_v2)
+            sentences.extend(sentences_v2) ##sentences_v2作为sentences这个list的多个元素
         else:
-            sentences.append(sent_v1)
+            sentences.append(sent_v1) ##sent_v1作为sentences这个list的单个元素
 
-    assert ''.join(sentences) == text
+    assert ''.join(sentences) == text ##str.join(sequence)，以str连接生成一个新字符串
 
-    # 合并
+    # 合并，只要合并后不大于max_seq_len，就一直合
     merged_sentences = []
     start_index_ = 0
 
@@ -255,13 +262,13 @@ def sent_mask(sent, stop_mask_range_list, mask_prob=0.15):
                 flag = True
                 break
 
-        if flag:
-            mask_sent.append(sent[i])
+        if flag: #这个字不能被mask
+            mask_sent.append(sent[i]) 
             continue
 
         if mask_nums < max_mask_token_nums:
             # mask_prob 的概率进行 mask, 80% 概率被置为 [mask]，10% 概率被替换， 10% 的概率不变
-            if random.random() < mask_prob:
+            if random.random() < mask_prob: ##随机生成[0,1)
                 mask_sent.append('[MASK]')
                 mask_nums += 1
             else:
@@ -283,7 +290,7 @@ def convert_crf_example(ex_idx, example: InputExample, tokenizer: BertTokenizer,
     callback_labels = {x: [] for x in ENTITY_TYPES}
 
     for _label in entities:
-        callback_labels[_label[0]].append((_label[1], _label[2]))
+        callback_labels[_label[0]].append((_label[1], _label[2])) ##Ti, 实体类型， 开始位置
 
     callback_info += (callback_labels,)
 
@@ -296,14 +303,14 @@ def convert_crf_example(ex_idx, example: InputExample, tokenizer: BertTokenizer,
         # information for dev callback
         label_ids = [0] * len(tokens)
 
-        # tag labels  ent ex. (T1, DRUG_DOSAGE, 447, 450, 小蜜丸)
-        for ent in entities:
+        # tag labels  ent ex. (实体类型, 文本内容，重构后的offset)
+        for ent in entities: 
             ent_type = ent[0]
 
             ent_start = ent[-1]
             ent_end = ent_start + len(ent[1]) - 1
 
-            if ent_start == ent_end:
+            if ent_start == ent_end: ##文本内容长度为1
                 label_ids[ent_start] = ent2id['S-' + ent_type]
             else:
                 label_ids[ent_start] = ent2id['B-' + ent_type]
@@ -323,6 +330,7 @@ def convert_crf_example(ex_idx, example: InputExample, tokenizer: BertTokenizer,
 
         assert len(label_ids) == max_seq_len, f'{len(label_ids)}'
 
+    #将文本分词后创建一个包含对应 id，token 类型及是否遮盖的词典
     encode_dict = tokenizer.encode_plus(text=tokens,
                                         max_length=max_seq_len,
                                         pad_to_max_length=True,
@@ -330,9 +338,9 @@ def convert_crf_example(ex_idx, example: InputExample, tokenizer: BertTokenizer,
                                         return_token_type_ids=True,
                                         return_attention_mask=True)
 
-    token_ids = encode_dict['input_ids']
+    token_ids = encode_dict['input_ids'] ##token在字典中对应id
     attention_masks = encode_dict['attention_mask']
-    token_type_ids = encode_dict['token_type_ids']
+    token_type_ids = encode_dict['token_type_ids'] ##token对应的句子id
 
     # if ex_idx < 3:
     #     logger.info(f"*** {set_type}_example-{ex_idx} ***")
@@ -341,7 +349,8 @@ def convert_crf_example(ex_idx, example: InputExample, tokenizer: BertTokenizer,
     #     logger.info(f"attention_masks: {attention_masks}")
     #     logger.info(f"token_type_ids: {token_type_ids}")
     #     logger.info(f"labels: {label_ids}")
-
+    
+    ##构建crf模型输入
     feature = CRFFeature(
         # bert inputs
         token_ids=token_ids,
@@ -369,15 +378,16 @@ def convert_span_example(ex_idx, example: InputExample, tokenizer: BertTokenizer
     for _label in entities:
         callback_labels[_label[0]].append((_label[1], _label[2]))
 
+    ##最后和feature一起return
     callback_info = (raw_text, callback_labels,)
 
     start_ids, end_ids = None, None
 
     if set_type == 'train':
-        start_ids = [0] * len(tokens)
-        end_ids = [0] * len(tokens)
+        start_ids = [0] * len(tokens) #存每个开始位置对应的实体类型
+        end_ids = [0] * len(tokens) #存每个结束位置对应的实体类型
 
-        for _ent in entities:
+        for _ent in entities: #实体类型，文本内容，offset
 
             ent_type = ent2id[_ent[0]]
             ent_start = _ent[-1]
@@ -446,7 +456,7 @@ def convert_mrc_example(ex_idx, example: InputExample, tokenizer: BertTokenizer,
     tokens_b = fine_grade_tokenize(text_b, tokenizer)
     assert len(tokens_b) == len(text_b)
 
-    label_dict = defaultdict(list)
+    label_dict = defaultdict(list) ##创建一个dict
 
     for ent in entities:
         ent_type = ent[0]
@@ -457,7 +467,7 @@ def convert_mrc_example(ex_idx, example: InputExample, tokenizer: BertTokenizer,
     # 训练数据中构造
     if set_type == 'train':
 
-        # 每一类为一个 example
+        # 每一种实体类型为一个 example
         # for _type in label_dict.keys():
         for _type in ENTITY_TYPES:
             start_ids = [0] * len(tokens_b)
@@ -496,8 +506,8 @@ def convert_mrc_example(ex_idx, example: InputExample, tokenizer: BertTokenizer,
             if mask_prob:
                 tokens_b = sent_mask(tokens_b, stop_mask_ranges, mask_prob=mask_prob)
 
-            encode_dict = tokenizer.encode_plus(text=tokens_a,
-                                                text_pair=tokens_b,
+            encode_dict = tokenizer.encode_plus(text=tokens_a, ##当前实体在mrc_ent2id中的那句话，分词后
+                                                text_pair=tokens_b, ##Optional second sequence to be encoded
                                                 max_length=max_seq_len,
                                                 pad_to_max_length=True,
                                                 truncation_strategy='only_second',
@@ -569,7 +579,7 @@ def convert_mrc_example(ex_idx, example: InputExample, tokenizer: BertTokenizer,
     return features, callback_info
 
 
-
+##遍历examples，转换成不同模型的输入
 def convert_examples_to_features(task_type, examples, max_seq_len, bert_dir, ent2id):
     assert task_type in ['crf', 'span', 'mrc']
 

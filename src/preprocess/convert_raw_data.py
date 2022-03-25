@@ -3,16 +3,16 @@ import json
 from tqdm import trange
 from sklearn.model_selection import train_test_split, KFold
 
-
+##将data写入data_dir文件夹下desc.json文件
 def save_info(data_dir, data, desc):
     with open(os.path.join(data_dir, f'{desc}.json'), 'w', encoding='utf-8') as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
+        json.dump(data, f, ensure_ascii=False, indent=2) ##写入文件 ##ensure_ascii允许非ascii字符
 
 
 def convert_data_to_json(base_dir, save_data=False, save_dict=False):
     stack_examples = []
-    pseudo_examples = []
-    test_examples = []
+    pseudo_examples = [] ##用预训练模型得到label后的测试集
+    test_examples = [] ##没有label的测试集
 
     stack_dir = os.path.join(base_dir, 'train')
     pseudo_dir = os.path.join(base_dir, 'pseudo')
@@ -20,7 +20,7 @@ def convert_data_to_json(base_dir, save_data=False, save_dict=False):
 
 
     # process train examples
-    for i in trange(1000):
+    for i in trange(1000): ##trange会打印进度条
         with open(os.path.join(stack_dir, f'{i}.txt'), encoding='utf-8') as f:
             text = f.read()
 
@@ -29,57 +29,58 @@ def convert_data_to_json(base_dir, save_data=False, save_dict=False):
             for line in f.readlines():
                 tmp_label = line.strip().split('\t')
                 assert len(tmp_label) == 3
-                tmp_mid = tmp_label[1].split()
-                tmp_label = [tmp_label[0]] + tmp_mid + [tmp_label[2]]
+                tmp_mid = tmp_label[1].split() ##应该分成三段：实体类型，开始位置，结束位置
+                tmp_label = [tmp_label[0]] + tmp_mid + [tmp_label[2]] ##长度为5
 
                 labels.append(tmp_label)
-                tmp_label[2] = int(tmp_label[2])
-                tmp_label[3] = int(tmp_label[3])
+                tmp_label[2] = int(tmp_label[2]) ##开始位置
+                tmp_label[3] = int(tmp_label[3]) ##结束位置
 
                 assert text[tmp_label[2]:tmp_label[3]] == tmp_label[-1], '{},{}索引抽取错误'.format(tmp_label, i)
 
         stack_examples.append({'id': i,
                                'text': text,
                                'labels': labels,
-                               'pseudo': 0})
+                               'pseudo': 0}) ##是否为test_set
 
 
     # 构建实体知识库
     kf = KFold(10)
-    entities = set()
-    ent_types = set()
-    for _now_id, _candidate_id in kf.split(stack_examples):
-        now = [stack_examples[_id] for _id in _now_id]
-        candidate = [stack_examples[_id] for _id in _candidate_id]
-        now_entities = set()
+    entities = set() ##存所有的文本内容
+    ent_types = set() ##存所有的实体类型
+    for _now_id, _candidate_id in kf.split(stack_examples): #Generate indices to split data into training and test set
+        now = [stack_examples[_id] for _id in _now_id] ##训练集
+        candidate = [stack_examples[_id] for _id in _candidate_id] ##测试集
+        now_entities = set() ##存当前训练集的所有文本内容
 
-        for _ex in now:
-            for _label in _ex['labels']:
-                ent_types.add(_label[1])
+        for _ex in now: ##迭代900个训练集
+            for _label in _ex['labels']: ##_label有五行：Ti,实体类型，开始位置，结束位置,文本内容
+                ent_types.add(_label[1]) ##实体类型
 
                 if len(_label[-1]) > 1:
                     now_entities.add(_label[-1])
                     entities.add(_label[-1])
         # print(len(now_entities))
-        for _ex in candidate:
+        for _ex in candidate: ##迭代100个测试集
             text = _ex['text']
             candidate_entities = []
 
             for _ent in now_entities:
-                if _ent in text:
+                if _ent in text: ##该文本内容出现在该条测试数据的text中
                     candidate_entities.append(_ent)
 
-            _ex['candidate_entities'] = candidate_entities
-    assert len(ent_types) == 13
+            _ex['candidate_entities'] = candidate_entities ##该测试集里面拥有的文本内容
+    assert len(ent_types) == 13 ##总共13种实体类型
 
     # process test examples predicted by the preliminary model
+    # 是用preliminary model预测过的测试集
     for i in trange(1000, 1500):
         with open(os.path.join(pseudo_dir, f'{i}.txt'), encoding='utf-8') as f:
             text = f.read()
 
         candidate_entities = []
-        for _ent in entities:
-            if _ent in text:
+        for _ent in entities: 
+            if _ent in text: ##文本库里的某个文本是否在该条测试数据中
                 candidate_entities.append(_ent)
 
         labels = []
@@ -131,7 +132,7 @@ def convert_data_to_json(base_dir, save_data=False, save_dict=False):
         span_ent2id = {_type: i+1 for i, _type in enumerate(ent_types)}
 
         ent_types = ['O'] + [p + '-' + _type for p in ['B', 'I', 'E', 'S'] for _type in list(ent_types)]
-        crf_ent2id = {ent: i for i, ent in enumerate(ent_types)}
+        crf_ent2id = {ent: i for i, ent in enumerate(ent_types)} ##crf模型要弄成这样
 
         mid_data_dir = os.path.join(os.path.split(base_dir)[0], 'mid_data')
         if not os.path.exists(mid_data_dir):

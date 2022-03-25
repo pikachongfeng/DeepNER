@@ -2,7 +2,7 @@ import torch
 from torch.utils.data import Dataset
 
 
-class NERDataset(Dataset):
+class NERDataset(Dataset): ##建立torch dataset
     def __init__(self, task_type, features, mode, **kwargs):
 
         self.nums = len(features)

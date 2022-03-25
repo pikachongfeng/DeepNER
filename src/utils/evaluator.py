@@ -7,7 +7,7 @@ from src.preprocess.processor import ENTITY_TYPES
 logger = logging.getLogger(__name__)
 
 
-def get_base_out(model, loader, device):
+def get_base_out(model, loader, device): ##dataset, dataloader。 dataloader接受dataset参数，并接受batch_size, shuffle, num_workers等参数
     """
     每一个任务的 forward 都一样，封装起来
     """

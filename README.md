@@ -159,9 +159,7 @@ python competition_predict.py
 
  - Baseline 细节
 	- 预训练模型：选用 UER-large-24 layer[1]，UER在RoBerta-wwm 框架下采用大规模优质中文语料继续训练，CLUE 任务中单模第一
-	- 差分学习率：BERT层学习率2e-5；其他层学习率2e-3
-	- 参数初始化：模型其他模块与BERT采用相同的初始化方式
-	- 滑动参数平均：加权平均最后几个epoch模型的权重，得到更加平滑和表现更优的模型
+	- 差分                                                                                                                                                                                                                    加权平均最后几个epoch模型的权重，得到更加平滑和表现更优的模型
 - Baseline bad-case分析
 <img src="md_files/7.png" style="zoom: 33%;" />
 
@@ -192,7 +190,7 @@ python competition_predict.py
 	- 以半指针-半标注的结构预测实体的起始位置，同时标注过程中给出实体类别
 	- 采用严格解码形式，重叠实体选取logits最大的一个，保证准确率
 	- 使用label smooth缓解过拟合问题
-<img src="md_files/10.png" style="zoom:33%;" />
+	<img src="md_files/10.png" style="zoom:33%;" />
 
 - 融合模型2——BERT-MRC
 	- 基于阅读理解的方式处理NER任务
@@ -202,12 +200,12 @@ python competition_predict.py
 	- 预测时对每一类都需构造一次样本，对解码输出不做限制，保证召回率
 	- 使用label smooth缓解过拟合问题
 	- MRC在本次数据集上精度表现不佳，且训练和推理效率较低，仅作为提升召回率的方案，提供代码仅供学习，不推荐日常使用
-<img src="md_files/11.png" style="zoom:33%;" />
+	<img src="md_files/11.png" style="zoom:33%;" />
 
 - 多级融合策略
 	- CRF/SPAN/MRC 5折交叉验证得到的模型进行第一级概率融合，将 logits 平均后解码实体
 	- CRF/SPAN/MRC 概率融合后的模型进行第二级投票融合，获取最终结果
-<img src="md_files/12.png" style="zoom:33%;" />
+	<img src="md_files/12.png" style="zoom:33%;" />
 
 ## 优化4：半监督学习
 - 动机：为了缓解医疗场景下的标注语料稀缺的问题， 我们使用半监督学习（伪标签）充分利用未标注的500条初赛测试集
@@ -215,7 +213,7 @@ python competition_predict.py
 	- 首先使用原始标注数据训练一个基准模型M
 	- 使用基准模型M对初赛测试集进行预测得到伪标签
 	- 将伪标签加入训练集，赋予伪标签一个动态可学习权重（图中alpha），加入真实标签数据中共同训练得到模型M’
-<img src="md_files/13.png" style="zoom: 25%;" />
+	<img src="md_files/13.png" style="zoom: 25%;" />
 	- tips：使用多模融合的基准模型减少伪标签的噪音；权重也可以固定，选取需多尝试哪个效果好，本质上是降低伪标签的loss权重，是缓解伪标签噪音的一种方法。	
 
 ## 其他无明显提升的尝试方案
